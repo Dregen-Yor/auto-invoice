@@ -1,5 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import 'pdfjs-dist/build/pdf.worker.min.mjs';
 import OpenAI from 'openai';
 import type { LLMConfig, InvoiceInfo, InvoiceType } from '../types';
 
@@ -30,10 +31,49 @@ async function fileToArrayBuffer(file: File): Promise<ArrayBuffer> {
   });
 }
 
+// 将 PDF 转换为图片 (base64)
+export async function convertPDFToImage(file: File): Promise<string> {
+  const arrayBuffer = await fileToArrayBuffer(file);
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+    cMapUrl: './cmaps/',
+    cMapPacked: true,
+  }).promise;
+
+  // 获取第一页
+  const page = await pdf.getPage(1);
+
+  // 设置渲染参数
+  const scale = 2.0; // 提高清晰度
+  const viewport = page.getViewport({ scale });
+
+  // 创建 canvas
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d')!;
+  canvas.height = viewport.height;
+  canvas.width = viewport.width;
+
+  // 渲染 PDF 页面到 canvas
+  const renderContext = {
+    canvasContext: context,
+    viewport: viewport,
+    canvas: canvas,
+  };
+
+  await page.render(renderContext).promise;
+
+  // 转换为 base64
+  return canvas.toDataURL('image/png').split(',')[1];
+}
+
 // 从 PDF 提取文字
 export async function extractTextFromPDF(file: File): Promise<string> {
   const arrayBuffer = await fileToArrayBuffer(file);
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+    cMapUrl: './cmaps/',
+    cMapPacked: true,
+  }).promise;
 
   let fullText = '';
 
@@ -167,29 +207,20 @@ export async function parseInvoiceWithLLM(
     throw new Error('没有可解析的文件');
   }
 
-  // 尝试使用视觉模式（文件上传）
+  // 如果用户上传的是图片，使用视觉模型处理
   if (invoice.imageBase64) {
     try {
       return await parseWithVisionMode(config, invoice);
     } catch (error) {
-      // 如果不是PDF，或者错误是致命的（非API不支持错误），则抛出异常
-      // 这里我们假设如果是PDF，则尝试回退到文本模式
-      // 但对于图片，如果没有其他解析方式，则抛出错误
-      if (!isPDF(invoice.file)) {
-        const errorMessage = error instanceof Error ? error.message : '未知错误';
-        if (errorMessage.includes('400') || errorMessage.includes('参数')) {
-          throw new Error('当前 API 不支持图片识别，请上传 PDF 格式的发票，或使用支持视觉功能的模型');
-        }
-        throw error;
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      if (errorMessage.includes('400') || errorMessage.includes('参数')) {
+        throw new Error('当前 API 不支持图片识别，请上传 PDF 格式的发票，或使用支持视觉功能的模型');
       }
-      // 如果是PDF且视觉模式失败，继续执行下方的PDF提取逻辑
-      console.warn('视觉模式解析失败，尝试回退到文本模式:', error);
+      throw error;
     }
-  } else if (!isPDF(invoice.file)) {
-     throw new Error('没有可解析的图片或PDF');
   }
 
-  // 如果是 PDF，提取文字后用纯文本模式解析
+  // 如果用户上传的是PDF，使用pdfjs提取文本进行处理
   if (isPDF(invoice.file)) {
     const text = await extractTextFromPDF(invoice.file);
     if (!text) {
@@ -198,7 +229,7 @@ export async function parseInvoiceWithLLM(
     return parseWithTextMode(config, text);
   }
 
-  throw new Error('不支持的文件格式');
+  throw new Error('不支持的文件格式，请上传图片或PDF文件');
 }
 
 // 视觉模式解析
@@ -208,15 +239,23 @@ async function parseWithVisionMode(
 ): Promise<Partial<InvoiceInfo>> {
   const client = createOpenAIClient(config);
 
-  const ext = invoice.file!.name.toLowerCase().split('.').pop();
-  const mimeTypes: Record<string, string> = {
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'png': 'image/png',
-    'gif': 'image/gif',
-    'webp': 'image/webp',
-  };
-  const mimeType = mimeTypes[ext || ''] || invoice.file!.type || 'image/jpeg';
+  // 如果有imageBase64且原始文件是PDF，说明这是PDF转换的图片，强制使用PNG格式
+  let mimeType = 'image/png';
+  if (invoice.file && isPDF(invoice.file)) {
+    // PDF转换的图片，始终使用PNG
+    mimeType = 'image/png';
+  } else {
+    // 普通图片文件，根据扩展名确定MIME类型
+    const ext = invoice.file!.name.toLowerCase().split('.').pop();
+    const mimeTypes: Record<string, string> = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+    };
+    mimeType = mimeTypes[ext || ''] || invoice.file!.type || 'image/jpeg';
+  }
 
   const response = await client.chat.completions.create({
     model: config.modelName,

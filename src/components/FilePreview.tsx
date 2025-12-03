@@ -46,7 +46,11 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ fileName, base64, widt
             bytes[i] = binaryString.charCodeAt(i);
           }
 
-          const loadingTask = pdfjsLib.getDocument({ data: bytes });
+          const loadingTask = pdfjsLib.getDocument({
+            data: bytes,
+            cMapUrl: './cmaps/',
+            cMapPacked: true,
+          });
           const pdf = await loadingTask.promise;
           const page = await pdf.getPage(1);
 
@@ -69,6 +73,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ fileName, base64, widt
              await page.render({
               canvasContext: context,
               viewport: scaledViewport,
+              canvas: canvas,
             }).promise;
           }
         } catch (error) {
