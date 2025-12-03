@@ -105,17 +105,29 @@ async function parseWithTextMode(
       },
     ],
     max_tokens: 8192,
-    thinking: {
-      type: 'disabled',
-    }
   });
 
-  const message = response.choices[0]?.message;
-  // 兼容智谱等模型的 reasoning_content 字段
-  const content = message?.content || (message as unknown as { reasoning_content?: string })?.reasoning_content;
+  console.log('API 响应:', JSON.stringify(response, null, 2));
+
+  // 兼容不同 API 返回格式
+  const resp = response as unknown as Record<string, unknown>;
+  let content: string | null = null;
+
+  // OpenAI 标准格式
+  if (response.choices?.[0]?.message?.content) {
+    content = response.choices[0].message.content;
+  }
+  // 其他可能的格式
+  else if (typeof resp.content === 'string') {
+    content = resp.content;
+  } else if (typeof resp.result === 'string') {
+    content = resp.result;
+  } else if (resp.result && typeof (resp.result as Record<string, unknown>).content === 'string') {
+    content = (resp.result as Record<string, unknown>).content as string;
+  }
 
   if (!content) {
-    throw new Error(`API返回内容为空`);
+    throw new Error(`API返回格式不支持: ${JSON.stringify(response).slice(0, 500)}`);
   }
 
   return parseJSONResponse(content);

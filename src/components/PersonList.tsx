@@ -18,16 +18,18 @@ import {
 import {
   PlusOutlined,
   DeleteOutlined,
-  UploadOutlined,
   LoadingOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   EditOutlined,
+  InboxOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { PersonInfo, InvoiceInfo, LLMConfig } from '../types';
 import { InvoiceTypeLabels } from '../types';
 import { fileToBase64, parseInvoiceWithLLM } from '../utils/llm';
+
+const { Dragger } = Upload;
 
 interface PersonListProps {
   persons: PersonInfo[];
@@ -340,19 +342,29 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
               </Popconfirm>
             </div>
           ))}
-          <Upload
+          <Dragger
             accept="image/*,.pdf"
             showUploadList={false}
-            beforeUpload={(file) => {
-              handleInvoiceUpload(record.id, file);
+            beforeUpload={(_file, fileList) => {
+              // 批量上传：处理所有选中的文件
+              fileList.forEach((f) => {
+                handleInvoiceUpload(record.id, f as File);
+              });
               return false;
             }}
             multiple
+            style={{ padding: '8px 16px' }}
           >
-            <Button size="small" icon={<UploadOutlined />}>
-              上传发票
-            </Button>
-          </Upload>
+            <p className="ant-upload-drag-icon" style={{ margin: '8px 0' }}>
+              <InboxOutlined style={{ fontSize: 24, color: '#1890ff' }} />
+            </p>
+            <p className="ant-upload-text" style={{ margin: 0, fontSize: 12 }}>
+              点击或拖拽文件上传发票
+            </p>
+            <p className="ant-upload-hint" style={{ margin: 0, fontSize: 11, color: '#999' }}>
+              支持 PDF、图片，可批量上传
+            </p>
+          </Dragger>
         </Space>
       ),
     },
