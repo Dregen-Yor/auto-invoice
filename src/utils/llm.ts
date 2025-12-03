@@ -36,11 +36,6 @@ async function recognizeTextWithOCR(imageData: string): Promise<string> {
   const result = await Tesseract.recognize(
     imageData,
     'chi_sim+eng', // 支持中文简体和英文
-    {
-      logger: (info) => {
-        console.log('OCR progress:', info);
-      },
-    }
   );
   return result.data.text.trim();
 }
@@ -87,8 +82,8 @@ export async function extractTextFromPDF(file: File): Promise<string> {
 }
 
 // 从图片提取文字（使用 OCR）
-export async function extractTextFromImage(imageBase64: string): Promise<string> {
-  const imageData = `data:image/jpeg;base64,${imageBase64}`;
+export async function extractTextFromImage(imageBase64: string, mimeType: string = 'image/jpeg'): Promise<string> {
+  const imageData = `data:${mimeType};base64,${imageBase64}`;
   return recognizeTextWithOCR(imageData);
 }
 
@@ -224,7 +219,18 @@ export async function parseInvoiceWithLLM(
     throw new Error('没有可解析的图片');
   }
 
-  const text = await extractTextFromImage(invoice.imageBase64);
+  // 获取图片 MIME 类型
+  const ext = invoice.file.name.toLowerCase().split('.').pop();
+  const mimeTypes: Record<string, string> = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+  };
+  const mimeType = mimeTypes[ext || ''] || invoice.file.type || 'image/jpeg';
+
+  const text = await extractTextFromImage(invoice.imageBase64, mimeType);
   if (!text) {
     throw new Error('图片 OCR 识别失败，无法提取文字');
   }
