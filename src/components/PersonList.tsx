@@ -33,7 +33,7 @@ const { Dragger } = Upload;
 
 interface PersonListProps {
   persons: PersonInfo[];
-  onPersonsChange: (persons: PersonInfo[]) => void;
+  onPersonsChange: (persons: PersonInfo[] | ((prev: PersonInfo[]) => PersonInfo[])) => void;
   llmConfig: LLMConfig;
 }
 
@@ -95,8 +95,9 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
 
   // 处理发票上传
   const handleInvoiceUpload = async (personId: string, file: File) => {
+    const invoiceId = generateId();
     const invoice: InvoiceInfo = {
-      id: generateId(),
+      id: invoiceId,
       fileName: file.name,
       type: null,
       amount: null,
@@ -115,17 +116,18 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
     }
 
     // 添加发票到人员
-    const updatedPersons = persons.map((p) =>
-      p.id === personId ? { ...p, invoices: [...p.invoices, invoice] } : p
+    onPersonsChange((prev) =>
+      prev.map((p) =>
+        p.id === personId ? { ...p, invoices: [...p.invoices, invoice] } : p
+      )
     );
-    onPersonsChange(updatedPersons);
 
     // 自动解析发票
-    await parseInvoice(personId, invoice.id, updatedPersons);
+    await parseInvoice(personId, invoiceId, invoice);
   };
 
   // 解析发票
-  const parseInvoice = async (personId: string, invoiceId: string, currentPersons: PersonInfo[]) => {
+  const parseInvoice = async (personId: string, invoiceId: string, invoice: InvoiceInfo) => {
     // 检查LLM配置
     if (!llmConfig.baseUrl || !llmConfig.apiKey || !llmConfig.modelName) {
       message.warning('请先配置LLM参数');
@@ -133,59 +135,56 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
     }
 
     // 更新状态为解析中
-    let updatedPersons = currentPersons.map((p) =>
-      p.id === personId
-        ? {
-            ...p,
-            invoices: p.invoices.map((inv) =>
-              inv.id === invoiceId ? { ...inv, parseStatus: 'parsing' as const } : inv
-            ),
-          }
-        : p
+    onPersonsChange((prev) =>
+      prev.map((p) =>
+        p.id === personId
+          ? {
+              ...p,
+              invoices: p.invoices.map((inv) =>
+                inv.id === invoiceId ? { ...inv, parseStatus: 'parsing' as const } : inv
+              ),
+            }
+          : p
+      )
     );
-    onPersonsChange(updatedPersons);
-
-    // 获取当前发票
-    const person = updatedPersons.find((p) => p.id === personId);
-    const invoice = person?.invoices.find((inv) => inv.id === invoiceId);
-
-    if (!invoice) return;
 
     try {
       const result = await parseInvoiceWithLLM(llmConfig, invoice);
 
-      updatedPersons = updatedPersons.map((p) =>
-        p.id === personId
-          ? {
-              ...p,
-              invoices: p.invoices.map((inv) =>
-                inv.id === invoiceId
-                  ? { ...inv, ...result, parseStatus: 'success' as const }
-                  : inv
-              ),
-            }
-          : p
+      onPersonsChange((prev) =>
+        prev.map((p) =>
+          p.id === personId
+            ? {
+                ...p,
+                invoices: p.invoices.map((inv) =>
+                  inv.id === invoiceId
+                    ? { ...inv, ...result, parseStatus: 'success' as const }
+                    : inv
+                ),
+              }
+            : p
+        )
       );
-      onPersonsChange(updatedPersons);
       message.success(`发票 ${invoice.fileName} 解析成功`);
     } catch (error) {
-      updatedPersons = updatedPersons.map((p) =>
-        p.id === personId
-          ? {
-              ...p,
-              invoices: p.invoices.map((inv) =>
-                inv.id === invoiceId
-                  ? {
-                      ...inv,
-                      parseStatus: 'error' as const,
-                      errorMessage: error instanceof Error ? error.message : '解析失败',
-                    }
-                  : inv
-              ),
-            }
-          : p
+      onPersonsChange((prev) =>
+        prev.map((p) =>
+          p.id === personId
+            ? {
+                ...p,
+                invoices: p.invoices.map((inv) =>
+                  inv.id === invoiceId
+                    ? {
+                        ...inv,
+                        parseStatus: 'error' as const,
+                        errorMessage: error instanceof Error ? error.message : '解析失败',
+                      }
+                    : inv
+                ),
+              }
+            : p
+        )
       );
-      onPersonsChange(updatedPersons);
       message.error(`发票解析失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
   };
@@ -202,7 +201,11 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
 
   // 重新解析发票
   const handleReparse = (personId: string, invoiceId: string) => {
-    parseInvoice(personId, invoiceId, persons);
+    const person = persons.find((p) => p.id === personId);
+    const invoice = person?.invoices.find((inv) => inv.id === invoiceId);
+    if (invoice) {
+      parseInvoice(personId, invoiceId, invoice);
+    }
   };
 
   // 编辑发票
@@ -345,11 +348,8 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
           <Dragger
             accept="image/*,.pdf"
             showUploadList={false}
-            beforeUpload={(_file, fileList) => {
-              // 批量上传：处理所有选中的文件
-              fileList.forEach((f) => {
-                handleInvoiceUpload(record.id, f as File);
-              });
+            beforeUpload={(file) => {
+              handleInvoiceUpload(record.id, file as File);
               return false;
             }}
             multiple
