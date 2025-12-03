@@ -167,6 +167,28 @@ export async function parseInvoiceWithLLM(
     throw new Error('没有可解析的文件');
   }
 
+  // 尝试使用视觉模式（文件上传）
+  if (invoice.imageBase64) {
+    try {
+      return await parseWithVisionMode(config, invoice);
+    } catch (error) {
+      // 如果不是PDF，或者错误是致命的（非API不支持错误），则抛出异常
+      // 这里我们假设如果是PDF，则尝试回退到文本模式
+      // 但对于图片，如果没有其他解析方式，则抛出错误
+      if (!isPDF(invoice.file)) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误';
+        if (errorMessage.includes('400') || errorMessage.includes('参数')) {
+          throw new Error('当前 API 不支持图片识别，请上传 PDF 格式的发票，或使用支持视觉功能的模型');
+        }
+        throw error;
+      }
+      // 如果是PDF且视觉模式失败，继续执行下方的PDF提取逻辑
+      console.warn('视觉模式解析失败，尝试回退到文本模式:', error);
+    }
+  } else if (!isPDF(invoice.file)) {
+     throw new Error('没有可解析的图片或PDF');
+  }
+
   // 如果是 PDF，提取文字后用纯文本模式解析
   if (isPDF(invoice.file)) {
     const text = await extractTextFromPDF(invoice.file);
@@ -176,20 +198,7 @@ export async function parseInvoiceWithLLM(
     return parseWithTextMode(config, text);
   }
 
-  // 对于图片，尝试使用视觉模式
-  if (!invoice.imageBase64) {
-    throw new Error('没有可解析的图片');
-  }
-
-  try {
-    return await parseWithVisionMode(config, invoice);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : '未知错误';
-    if (errorMessage.includes('400') || errorMessage.includes('参数')) {
-      throw new Error('当前 API 不支持图片识别，请上传 PDF 格式的发票，或使用支持视觉功能的模型');
-    }
-    throw error;
-  }
+  throw new Error('不支持的文件格式');
 }
 
 // 视觉模式解析

@@ -13,7 +13,6 @@ import {
   Select,
   InputNumber,
   DatePicker,
-  Image,
 } from 'antd';
 import {
   PlusOutlined,
@@ -28,6 +27,7 @@ import dayjs from 'dayjs';
 import type { PersonInfo, InvoiceInfo, LLMConfig } from '../types';
 import { InvoiceTypeLabels } from '../types';
 import { fileToBase64, parseInvoiceWithLLM } from '../utils/llm';
+import { FilePreview } from './FilePreview';
 
 const { Dragger } = Upload;
 
@@ -311,14 +311,9 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
               }}
             >
               {invoice.imageBase64 && (
-                <Image
-                  src={`data:image/jpeg;base64,${invoice.imageBase64}`}
-                  width={40}
-                  height={40}
-                  style={{ objectFit: 'cover', borderRadius: 4 }}
-                  preview={{
-                    src: `data:image/jpeg;base64,${invoice.imageBase64}`,
-                  }}
+                <FilePreview
+                  fileName={invoice.fileName}
+                  base64={invoice.imageBase64}
                 />
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -447,10 +442,12 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
         width={500}
       >
         {editingInvoice?.invoice.imageBase64 && (
-          <div style={{ marginBottom: 16, textAlign: 'center' }}>
-            <Image
-              src={`data:image/jpeg;base64,${editingInvoice.invoice.imageBase64}`}
-              style={{ maxHeight: 200 }}
+          <div style={{ marginBottom: 16, textAlign: 'center', display: 'flex', justifyContent: 'center' }}>
+            <FilePreview
+              fileName={editingInvoice.invoice.fileName}
+              base64={editingInvoice.invoice.imageBase64}
+              width={200}
+              height={200}
             />
           </div>
         )}
