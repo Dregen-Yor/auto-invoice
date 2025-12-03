@@ -313,10 +313,11 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
                 borderRadius: 4,
               }}
             >
-              {invoice.imageBase64 && (
+              {(invoice.imageBase64 || invoice.file) && (
                 <FilePreview
                   fileName={invoice.fileName}
                   base64={invoice.imageBase64}
+                  file={invoice.file}
                 />
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -444,11 +445,12 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
         }}
         width={500}
       >
-        {editingInvoice?.invoice.imageBase64 && (
+        {(editingInvoice?.invoice.imageBase64 || editingInvoice?.invoice.file) && (
           <div style={{ marginBottom: 16, textAlign: 'center', display: 'flex', justifyContent: 'center' }}>
             <FilePreview
               fileName={editingInvoice.invoice.fileName}
               base64={editingInvoice.invoice.imageBase64}
+              file={editingInvoice.invoice.file}
               width={200}
               height={200}
             />

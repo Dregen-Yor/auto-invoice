@@ -9,6 +9,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 interface FilePreviewProps {
   fileName: string;
   base64?: string; // base64 content without prefix
+  file?: File; // 文件对象
   width?: number | string;
   height?: number | string;
 }
@@ -27,7 +28,7 @@ const getMimeType = (fileName: string) => {
   return mimeTypes[ext || ''] || 'application/octet-stream';
 };
 
-export const FilePreview: React.FC<FilePreviewProps> = ({ fileName, base64, width = 40, height = 40 }) => {
+export const FilePreview: React.FC<FilePreviewProps> = ({ fileName, base64, file, width = 40, height = 40 }) => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mimeType = getMimeType(fileName);
@@ -36,14 +37,24 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ fileName, base64, widt
   useEffect(() => {
     let mounted = true;
 
-    if (isPdf && base64) {
+    if (isPdf && (base64 || file)) {
       const renderPdf = async () => {
         try {
-          // 将 base64 转换为 Uint8Array
-          const binaryString = window.atob(base64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+          let bytes: Uint8Array;
+
+          if (base64) {
+            // 将 base64 转换为 Uint8Array
+            const binaryString = window.atob(base64);
+            bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+          } else if (file) {
+            // 将 File 转换为 Uint8Array
+            const arrayBuffer = await file.arrayBuffer();
+            bytes = new Uint8Array(arrayBuffer);
+          } else {
+            return;
           }
 
           const loadingTask = pdfjsLib.getDocument({
@@ -86,11 +97,22 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ fileName, base64, widt
     return () => {
       mounted = false;
     };
-  }, [isPdf, base64]);
+  }, [isPdf, base64, file]);
 
-  if (!base64) return null;
+  // 如果既没有base64也没有file，则不渲染
+  if (!base64 && !file) return null;
 
-  const src = `data:${mimeType};base64,${base64}`;
+  // 生成预览用的URL
+  const getPreviewSrc = () => {
+    if (base64) {
+      return `data:${mimeType};base64,${base64}`;
+    } else if (file) {
+      return URL.createObjectURL(file);
+    }
+    return '';
+  };
+
+  const src = getPreviewSrc();
 
   if (isPdf) {
     return (
