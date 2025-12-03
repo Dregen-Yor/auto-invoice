@@ -1,11 +1,22 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import Tesseract from 'tesseract.js';
+import * as ocr from '@paddlejs-models/ocr';
 import OpenAI from 'openai';
 import type { LLMConfig, InvoiceInfo, InvoiceType } from '../types';
 
 // 设置 PDF.js worker（使用本地文件）
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+// PaddleOCR 初始化状态
+let ocrInitialized = false;
+
+// 初始化 PaddleOCR
+async function initOCR(): Promise<void> {
+  if (!ocrInitialized) {
+    await ocr.init();
+    ocrInitialized = true;
+  }
+}
 
 // 将文件转换为base64
 export async function fileToBase64(file: File): Promise<string> {
@@ -31,13 +42,22 @@ async function fileToArrayBuffer(file: File): Promise<ArrayBuffer> {
   });
 }
 
-// 使用 Tesseract.js 进行 OCR 识别
-async function recognizeTextWithOCR(imageData: string): Promise<string> {
-  const result = await Tesseract.recognize(
-    imageData,
-    'chi_sim+eng', // 支持中文简体和英文
-  );
-  return result.data.text.trim();
+// 从 data URL 创建 HTMLImageElement
+function createImageFromDataURL(dataURL: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataURL;
+  });
+}
+
+// 使用 PaddleOCR 进行 OCR 识别
+async function recognizeTextWithOCR(imageElement: HTMLImageElement): Promise<string> {
+  await initOCR();
+  const result = await ocr.recognize(imageElement);
+  // PaddleOCR 返回 { text: string[], points: number[][][] }
+  return result.text.join('\n').trim();
 }
 
 // 从 PDF 提取文字（使用 OCR）
@@ -70,11 +90,12 @@ export async function extractTextFromPDF(file: File): Promise<string> {
       canvas: canvas,
     }).promise;
     
-    // 将 canvas 转换为图片 data URL
+    // 将 canvas 转换为图片 data URL，然后创建 HTMLImageElement
     const imageData = canvas.toDataURL('image/png');
+    const img = await createImageFromDataURL(imageData);
     
-    // 使用 Tesseract.js 进行 OCR 识别
-    const pageText = await recognizeTextWithOCR(imageData);
+    // 使用 PaddleOCR 进行 OCR 识别
+    const pageText = await recognizeTextWithOCR(img);
     fullText += pageText + '\n';
   }
 
@@ -84,7 +105,8 @@ export async function extractTextFromPDF(file: File): Promise<string> {
 // 从图片提取文字（使用 OCR）
 export async function extractTextFromImage(imageBase64: string, mimeType: string = 'image/jpeg'): Promise<string> {
   const imageData = `data:${mimeType};base64,${imageBase64}`;
-  return recognizeTextWithOCR(imageData);
+  const img = await createImageFromDataURL(imageData);
+  return recognizeTextWithOCR(img);
 }
 
 // 判断文件是否为 PDF
