@@ -107,12 +107,15 @@ const PersonList: React.FC<PersonListProps> = ({ persons, onPersonsChange, llmCo
       parseStatus: 'pending',
     };
 
-    // 转换为base64
-    try {
-      invoice.imageBase64 = await fileToBase64(file);
-    } catch {
-      message.error('文件读取失败');
-      return;
+    // 只有图片文件才转换为base64
+    const isImageFile = file.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name);
+    if (isImageFile) {
+      try {
+        invoice.imageBase64 = await fileToBase64(file);
+      } catch {
+        message.error('图片文件读取失败');
+        return;
+      }
     }
 
     // 添加发票到人员
