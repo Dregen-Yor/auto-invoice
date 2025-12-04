@@ -63,14 +63,28 @@ export function exportToExcel(persons: PersonInfo[], filename: string = '发票�
   XLSX.writeFile(workbook, `${filename}.xlsx`);
 }
 
+// 格式化金额列表为 "xxx+xxx+...=xxx" 形式
+function formatAmountList(amounts: number[]): string | null {
+  if (amounts.length === 0) return null;
+  const total = amounts.reduce((a, b) => a + b, 0);
+  if (amounts.length === 1) {
+    return String(total);
+  }
+  return `${amounts.join('+')}=${total}`;
+}
+
 // 按差旅明细模板格式导出
 export function exportSummaryToExcel(
   persons: PersonInfo[],
   travelInfo: TravelInfo,
   filename: string = '差旅明细'
 ) {
-  // 按人员汇总
-  const summaryMap = new Map<string, { name: string; employeeId: string; totals: Record<string, number> }>();
+  // 按人员汇总，收集每种类型的所有金额
+  const summaryMap = new Map<string, {
+    name: string;
+    employeeId: string;
+    amounts: Record<string, number[]>;
+  }>();
 
   for (const person of persons) {
     const key = `${person.name}-${person.employeeId}`;
@@ -78,11 +92,11 @@ export function exportSummaryToExcel(
       summaryMap.set(key, {
         name: person.name,
         employeeId: person.employeeId,
-        totals: {
-          intercity_transport: 0,
-          intracity_transport: 0,
-          accommodation: 0,
-          registration_fee: 0,
+        amounts: {
+          intercity_transport: [],
+          intracity_transport: [],
+          accommodation: [],
+          registration_fee: [],
         },
       });
     }
@@ -90,14 +104,14 @@ export function exportSummaryToExcel(
     const summary = summaryMap.get(key)!;
     for (const invoice of person.invoices) {
       if (invoice.parseStatus === 'success' && invoice.type && invoice.amount) {
-        summary.totals[invoice.type] += invoice.amount;
+        summary.amounts[invoice.type].push(invoice.amount);
       }
     }
   }
 
   const summaries = Array.from(summaryMap.values());
 
-  // 计算小计
+  // 计算小计（汇总所有金额）
   const subtotals = {
     intercity_transport: 0,
     intracity_transport: 0,
@@ -106,10 +120,10 @@ export function exportSummaryToExcel(
   };
 
   summaries.forEach(s => {
-    subtotals.intercity_transport += s.totals.intercity_transport;
-    subtotals.intracity_transport += s.totals.intracity_transport;
-    subtotals.accommodation += s.totals.accommodation;
-    subtotals.registration_fee += s.totals.registration_fee;
+    subtotals.intercity_transport += s.amounts.intercity_transport.reduce((a, b) => a + b, 0);
+    subtotals.intracity_transport += s.amounts.intracity_transport.reduce((a, b) => a + b, 0);
+    subtotals.accommodation += s.amounts.accommodation.reduce((a, b) => a + b, 0);
+    subtotals.registration_fee += s.amounts.registration_fee.reduce((a, b) => a + b, 0);
   });
 
   const totalAmount = Object.values(subtotals).reduce((a, b) => a + b, 0);
@@ -120,15 +134,15 @@ export function exportSummaryToExcel(
     ['姓名', '学号', '城市间交通费', '住宿费', '市内交通费', '报名费'],
   ];
 
-  // 人员数据行
+  // 人员数据行（使用 xxx+xxx=xxx 格式）
   summaries.forEach(summary => {
     worksheetData.push([
       summary.name,
       summary.employeeId,
-      summary.totals.intercity_transport || null,
-      summary.totals.accommodation || null,
-      summary.totals.intracity_transport || null,
-      summary.totals.registration_fee || null,
+      formatAmountList(summary.amounts.intercity_transport),
+      formatAmountList(summary.amounts.accommodation),
+      formatAmountList(summary.amounts.intracity_transport),
+      formatAmountList(summary.amounts.registration_fee),
     ]);
   });
 
