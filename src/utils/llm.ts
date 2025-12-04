@@ -113,7 +113,7 @@ const PARSE_PROMPT = `请分析以下发票/票据内容，提取信息并以JSO
    - "accommodation" (住宿：酒店、宾馆等)
    - "registration_fee" (报名费：会议注册费、培训费等)
 
-2. amount: 金额（数字，不带货币符号）
+2. amount: 金额（数字，不带货币符号）注意是价税合计，一般位于‘价税合计（大写）’后，是最大的金额。
 
 3. date: 日期（格式：YYYY-MM-DD）
 
