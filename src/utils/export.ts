@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { PersonInfo, ExportRow } from '../types';
+import type { PersonInfo, ExportRow, InvoiceType } from '../types';
 import { InvoiceTypeLabels } from '../types';
 
 // 差旅明细信息
@@ -63,36 +63,34 @@ export function exportToExcel(persons: PersonInfo[], filename: string = '发票�
   XLSX.writeFile(workbook, `${filename}.xlsx`);
 }
 
-// 格式化金额列表为 "xxx+xxx+...=xxx" 形式
-function formatAmountList(amounts: number[]): string | null {
-  if (amounts.length === 0) return null;
-  const total = amounts.reduce((a, b) => a + b, 0);
-  if (amounts.length === 1) {
-    return String(total);
-  }
-  return `${amounts.join('+')}=${total}`;
-}
-
-// 按差旅明细模板格式导出
+// 按差旅明细模板格式导出（每张发票一行）
 export function exportSummaryToExcel(
   persons: PersonInfo[],
   travelInfo: TravelInfo,
   filename: string = '差旅明细'
 ) {
-  // 按人员汇总，收集每种类型的所有金额
-  const summaryMap = new Map<string, {
+  // 发票类型列表，按顺序
+  const invoiceTypes: InvoiceType[] = [
+    'intercity_transport',
+    'intracity_transport',
+    'accommodation',
+    'registration_fee',
+  ];
+
+  // 按人员分组发票
+  const personInvoicesMap = new Map<string, {
     name: string;
     employeeId: string;
-    amounts: Record<string, number[]>;
+    invoicesByType: Record<string, number[]>;
   }>();
 
   for (const person of persons) {
     const key = `${person.name}-${person.employeeId}`;
-    if (!summaryMap.has(key)) {
-      summaryMap.set(key, {
+    if (!personInvoicesMap.has(key)) {
+      personInvoicesMap.set(key, {
         name: person.name,
         employeeId: person.employeeId,
-        amounts: {
+        invoicesByType: {
           intercity_transport: [],
           intracity_transport: [],
           accommodation: [],
@@ -101,17 +99,17 @@ export function exportSummaryToExcel(
       });
     }
 
-    const summary = summaryMap.get(key)!;
+    const personData = personInvoicesMap.get(key)!;
     for (const invoice of person.invoices) {
       if (invoice.parseStatus === 'success' && invoice.type && invoice.amount) {
-        summary.amounts[invoice.type].push(invoice.amount);
+        personData.invoicesByType[invoice.type].push(invoice.amount);
       }
     }
   }
 
-  const summaries = Array.from(summaryMap.values());
+  const personDataList = Array.from(personInvoicesMap.values());
 
-  // 计算小计（汇总所有金额）
+  // 计算小计
   const subtotals = {
     intercity_transport: 0,
     intracity_transport: 0,
@@ -119,31 +117,50 @@ export function exportSummaryToExcel(
     registration_fee: 0,
   };
 
-  summaries.forEach(s => {
-    subtotals.intercity_transport += s.amounts.intercity_transport.reduce((a, b) => a + b, 0);
-    subtotals.intracity_transport += s.amounts.intracity_transport.reduce((a, b) => a + b, 0);
-    subtotals.accommodation += s.amounts.accommodation.reduce((a, b) => a + b, 0);
-    subtotals.registration_fee += s.amounts.registration_fee.reduce((a, b) => a + b, 0);
+  personDataList.forEach(p => {
+    invoiceTypes.forEach(type => {
+      subtotals[type] += p.invoicesByType[type].reduce((a, b) => a + b, 0);
+    });
   });
 
   const totalAmount = Object.values(subtotals).reduce((a, b) => a + b, 0);
 
-  // 创建工作表数据，按模板格式
+  // 创建工作表数据
   const worksheetData: (string | number | null)[][] = [
     // 表头
     ['姓名', '学号', '城市间交通费', '住宿费', '市内交通费', '报名费'],
   ];
 
-  // 人员数据行（使用 xxx+xxx=xxx 格式）
-  summaries.forEach(summary => {
-    worksheetData.push([
-      summary.name,
-      summary.employeeId,
-      formatAmountList(summary.amounts.intercity_transport),
-      formatAmountList(summary.amounts.accommodation),
-      formatAmountList(summary.amounts.intracity_transport),
-      formatAmountList(summary.amounts.registration_fee),
-    ]);
+  // 每个人的发票数据，每张发票单独一行
+  personDataList.forEach(personData => {
+    let isFirstRow = true;
+
+    // 按类型顺序遍历，每张发票单独一行
+    // 顺序：城市间交通费、住宿费、市内交通费、报名费
+    const typeOrder: { type: InvoiceType; colIndex: number }[] = [
+      { type: 'intercity_transport', colIndex: 2 },
+      { type: 'accommodation', colIndex: 3 },
+      { type: 'intracity_transport', colIndex: 4 },
+      { type: 'registration_fee', colIndex: 5 },
+    ];
+
+    for (const { type, colIndex } of typeOrder) {
+      for (const amount of personData.invoicesByType[type]) {
+        const row: (string | number | null)[] = [
+          isFirstRow ? personData.name : null,
+          isFirstRow ? personData.employeeId : null,
+          null, null, null, null,
+        ];
+        row[colIndex] = amount;
+        worksheetData.push(row);
+        isFirstRow = false;
+      }
+    }
+
+    // 如果该人员没有任何发票，仍然添加一行显示姓名
+    if (isFirstRow) {
+      worksheetData.push([personData.name, personData.employeeId, null, null, null, null]);
+    }
   });
 
   // 添加空行直到第6行（确保至少有5行数据行）
