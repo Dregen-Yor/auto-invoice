@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# 差旅明细模板（本地参考文件，不提交）
+差旅明细模板*.xlsx
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
